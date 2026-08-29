@@ -90,12 +90,18 @@ Three caveats on the reported figure.
 - It is labelled partial, in the script's own docstring, and it excludes order construction, the
   real network call, and the telemetry write. A fabricated end-to-end number would misrepresent
   reality worse than publishing none.
-- The parent system's end-to-end figure, detect→fire p50 4.33ms / p99 10.53ms against a <15ms
-  budget, is not reproducible here, because it needs a signed round trip to a live demo account. It
-  is quoted in [§7.2](docs/GUIDE.md#72-the-process-model) with the two caveats that travel with it
-  everywhere: n=139 is too small to claim the p99 is met, and the span is a lower bound, since the
-  clock starts after `orjson.loads()` and stops when the request reaches `aiohttp`, so network
-  transit and exchange-side processing sit outside it.
+- The parent system's end-to-end figure is not reproducible here, because it needs a signed round
+  trip to a live demo account. Over the system's whole life it measured detect→fire p50 10.23ms /
+  p90 29.66ms / p99 46.61ms on n=734 real demo-venue order fires, against a <15ms budget: met at
+  the median, missed by roughly 3× at the tail. Shadow fires (the same path, real signature, stopped
+  before the socket write) ran p50 6.72ms / p99 13.49ms on n=92,441. An earlier window (2026-08-21,
+  n=139) read p50 4.33ms / p99 10.53ms and was quoted here until 2026-08-29; the lifetime figure
+  replaces it because the window was favourable, and the small-sample number had hardened into a
+  fact by being cited. The per-stage percentiles are committed as
+  [`benchmarks/parent_latency_summary.csv`](benchmarks/parent_latency_summary.csv); the span is a
+  lower bound, since the clock starts after `orjson.loads()` and stops when the request reaches
+  `aiohttp`, so network transit and exchange-side processing sit outside it. Details in
+  [§7.2](docs/GUIDE.md#72-the-process-model).
 - It is one span. The gaps between stages are most of the elapsed time on a healthy run, and summing
   sub-measurements would make them disappear.
 
@@ -202,15 +208,14 @@ The recurring result has one shape. The taker fee is larger than the dislocation
 kills every fee-paying strategy built from public data before it is coded. One finding, arrived at
 five separate ways.
 
-[`docs/GUIDE.md`](docs/GUIDE.md) §4 has each with its sample size, §5 has the method, and §6 is the
-one to read: sixteen failure modes, each named as a general form and then as the instance that
-produced it. A sample:
+[`docs/GUIDE.md`](docs/GUIDE.md) §4 has each with its sample size, §5 has the method, and §6 has
+sixteen failure modes, each named as a general form and then as the instance that produced it. A
+sample:
 
 - A green test suite is blind to wire-shape truth. A suite that had grown to 604 tests stayed green
   through three separate wire-shape bugs, one of which sent `1 − yes_bid` to the wire.
-- A counter with no decrement is a leak, and the first fix for it was also wrong, in a way worth
-  naming. It replaced an unbounded error with a bounded guess where it should have replaced a guess
-  with a fact.
+- A counter with no decrement is a leak, and the first fix for it was also wrong. It replaced an
+  unbounded error with a bounded guess where it should have replaced a guess with a fact.
 - A structural guarantee written only in prose decays silently. One documented invariant was not in
   the code at all for an unknown period.
 - Re-running a test that fails a third of the time is a coin flip that eventually comes up green,

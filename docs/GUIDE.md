@@ -294,11 +294,21 @@ sub-measurements would make them disappear. Nothing that can raise, block, or lo
 reason may sit between building an order and sending it, and measurements on that stretch are held
 in locals and written after dispatch resolves.
 
-Measured in the parent system on a live demo run (2026-08-21, n=139, too small to claim the p99 is
-met, and stated that way wherever it is cited): detect→fire p50 4.33ms / p99 10.53ms against a
-<15ms budget, with signing dominating the median at p50 3.07ms, over its own 3ms budget. These are
-lower bounds. The clock starts after `orjson.loads()` and stops when the request reaches `aiohttp`,
-so network transit, TLS, and exchange-side processing are all outside them.
+Measured in the parent system over its whole life (2026-08-19 to 2026-08-29), on the demo venue:
+detect→fire p50 10.23ms / p90 29.66ms / p99 46.61ms / max 898.82ms on n=734 real order fires,
+against a <15ms budget, so the budget was met at the median and missed by roughly 3× at p99.
+Signing dominated: p50 3.68ms / p99 9.02ms on real fires against its own 3ms budget, while the
+isolated warm-loop microbenchmark reads 1.65ms, an in-situ cost about 2.2× the benchmark. Shadow
+fires (n=92,441; identical path, real signature, stopped before the socket write) ran p50 6.72ms /
+p99 13.49ms, faster than real fires at both points; the gap was never explained. Round trip to the venue (`dispatch_ack`) ran p50 123ms / p99 487ms, an order of
+magnitude above everything local. The per-stage table is committed as
+[`../benchmarks/parent_latency_summary.csv`](../benchmarks/parent_latency_summary.csv).
+
+A correction, kept on the record. From 2026-08-21 to 2026-08-29 this section quoted p50 4.33ms /
+p99 10.53ms from a single n=139 window. That window was favourable, and the number was cited until
+it read as a fact. The lifetime distribution above replaces it. All figures are lower bounds: the
+clock starts after `orjson.loads()` and stops when the request reaches `aiohttp`, so network
+transit, TLS, and exchange-side processing are all outside them.
 
 That live figure is not reproducible from this repository, because it needs a signed round trip to
 a demo account. What *is* reproducible here is the pair of contributors measurable without a
