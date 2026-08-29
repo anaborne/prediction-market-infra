@@ -1,0 +1,84 @@
+# CI runs the same gates in the same order as the documented local checks, so a green check
+# here means the same thing a clean local run means. The test suite touches no network by design
+# (`ENGINEERING.md` rule 5: network-facing code is tested against local servers on ephemeral ports),
+# so nothing here needs credentials and no job may be given any.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: ruff · mypy --strict · pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # `--frozen` fails the build if uv.lock has drifted from pyproject.toml, rather than
+      # silently resolving something the lockfile never pinned.
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Tests
+        run: uv run pytest -q
+
+  benchmarks:
+    # Runs both benchmarks and asserts only that they complete. A hosted runner is a noisy shared
+    # machine, and any latency threshold enforced here would either be so loose it asserts nothing
+    # or so tight it fails on a busy neighbour.
+    name: benchmarks · smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Latency harness
+        run: uv run python benchmarks/latency_bench.py
+
+      - name: Matcher harness (small corpus, for speed)
+        working-directory: benchmarks
+        run: uv run python matcher_bench.py --kalshi 4000 --other 1500 --planted 100
+
+      - name: Benchmark pipeline (Prefect flow, orchestrates both benchmarks above)
+        run: uv run python benchmarks/orchestration/benchmark_flow.py

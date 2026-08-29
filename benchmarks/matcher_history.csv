@@ -1,0 +1,3 @@
+timestamp_utc,platform,kalshi_markets,other_markets,reduction_factor,candidates_scored,wall_time_s,planted_recovered,planted_total
+2026-08-26T20:01:08Z,Linux-aarch64-py3.14.7,4000,1500,259,23135,0.68,100,100
+2026-08-26T20:01:35Z,Linux-aarch64-py3.14.7,4000,1500,259,23135,0.73,100,100

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 16 980 252" width="980" height="252" role="img" aria-label="The poller sends a non-blocking wake over a Unix domain socket; the executor acknowledges it before awaiting dispatch, then a kill switch and risk gate decide between posting the order to the exchange API and appending a rejected row to the telemetry database.">
+  <defs>
+    <marker id="pmi-a" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path fill="#93A3AA" d="M0,1.2 L9,5 L0,8.8 z"/></marker>
+    <marker id="pmi-a2" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path fill="#5CC2E6" d="M0,1.2 L9,5 L0,8.8 z"/></marker>
+    <marker id="pmi-ar" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path fill="#E0954A" d="M0,1.2 L9,5 L0,8.8 z"/></marker>
+  </defs>
+  <g fill="none" stroke="#93A3AA" stroke-width="1.25" stroke-linejoin="round">
+    <rect x="22" y="112" width="124" height="56" rx="2"/>
+    <rect x="220" y="118" width="118" height="44" rx="2" stroke-dasharray="4 3"/>
+    <rect x="412" y="112" width="136" height="56" rx="2"/>
+    <rect x="808" y="112" width="150" height="56" rx="2"/>
+    <polygon points="678,102 734,140 678,178 622,140"/>
+    <path d="M146,140 H220" marker-end="url(#pmi-a)"/>
+    <path d="M338,140 H412" marker-end="url(#pmi-a)"/>
+    <path d="M548,140 H622" marker-end="url(#pmi-a)"/>
+    <path d="M734,140 H808" marker-end="url(#pmi-a)"/>
+    <path stroke="#5CC2E6" d="M480,112 V54 H84 V112" marker-end="url(#pmi-a2)"/>
+    <path stroke="#E0954A" d="M678,178 V212" marker-end="url(#pmi-ar)"/>
+    <rect stroke="#E0954A" x="548" y="212" width="260" height="40" rx="2" fill="none"/>
+    <path d="M480,168 V232 H548" stroke-dasharray="4 3" marker-end="url(#pmi-a)"/>
+  </g>
+  <g stroke="none" fill="#93A3AA" font-family="IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, monospace">
+    <g text-anchor="middle">
+      <text x="84" y="137" font-size="12" font-weight="500">poller</text>
+      <text x="84" y="153" font-size="9" opacity="0.72">ipc.poller_client</text>
+      <text x="279" y="137" font-size="12" font-weight="500">unix socket</text>
+      <text x="279" y="153" font-size="9" opacity="0.72">4-byte framed orjson</text>
+      <text x="480" y="137" font-size="12" font-weight="500">executor</text>
+      <text x="480" y="153" font-size="9" opacity="0.72">ipc.executor_server</text>
+      <text x="883" y="137" font-size="12" font-weight="500">exchange REST</text>
+      <text x="883" y="153" font-size="9" opacity="0.72">POST /portfolio/orders</text>
+      <text x="678" y="137" font-size="11">kill switch</text>
+      <text x="678" y="151" font-size="11">risk gate</text>
+      <text x="183" y="101" font-size="10.5" opacity="0.85">send_wake</text>
+      <text x="375" y="101" font-size="10.5" opacity="0.85">read</text>
+      <text x="585" y="101" font-size="10.5" opacity="0.85">dispatch</text>
+      <text x="771" y="101" font-size="10.5" opacity="0.85">clear</text>
+      <text fill="#5CC2E6" x="282" y="44" font-size="10.5">WakeAck, before dispatch is awaited</text>
+      <text fill="#E0954A" x="678" y="229" font-size="10.5" font-weight="500">rejected row</text>
+      <text fill="#E0954A" x="678" y="243" font-size="9" opacity="0.8">telemetry.sqlite (WAL)</text>
+    </g>
+    <text fill="#E0954A" x="690" y="199" font-size="10.5" text-anchor="start">engaged / refused</text>
+    <text x="472" y="226" font-size="9.5" opacity="0.7" text-anchor="end">fire and forget</text>
+  </g>
+</svg>
