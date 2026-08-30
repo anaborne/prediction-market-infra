@@ -26,7 +26,7 @@ cd benchmarks && uv run python matcher_bench.py   # the narrowing, on a generate
 
 ---
 
-## 1. The hot path, and a benchmark that refuses to overstate it
+## 1. The hot path and benchmark
 
 Two processes. The poller decides what to fire on. The executor owns how the order goes out, so
 contract count, time in force, and self-trade prevention are all executor configuration. The split
