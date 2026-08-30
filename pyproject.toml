@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Extracted infrastructure from a Kalshi/Polymarket prediction-market trading system: hot path, cross-venue matcher, and reproducible benchmarks."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Proprietary" }
+license = { text = "MIT" }
 authors = [{ name = "Immanuel Anaborne" }]
 dependencies = [
     "aiohttp>=3.9",

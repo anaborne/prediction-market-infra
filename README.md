@@ -289,4 +289,4 @@ uv run pytest -q                         # 391 tests, no network
 
 ## License
 
-No license granted. Personal project, published for reference.
+MIT, per [`LICENSE`](LICENSE).
