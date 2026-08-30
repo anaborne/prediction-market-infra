@@ -68,7 +68,15 @@ run, and a real poller → real Unix socket → real executor → real dispatche
 fake venue client. It runs the round trip under stock `asyncio` and under `uvloop`, which is how the
 `uvloop` decision was made, and appends to [`benchmarks/history.csv`](benchmarks/history.csv).
 
-One run on the machine this was extracted on:
+`--executor cpp:/path/to/executor_hotpath` puts the C++ reimplementation in
+[executor-hotpath-cpp](https://github.com/anaborne/executor-hotpath-cpp) on the far end of the
+socket instead. The poller, the frames and the `latency_events` table are the same, and
+`poller_client.py` is not modified or subclassed to make it work, which is the whole claim the
+substitution makes. The `executor` column in `history.csv` says which one produced a row.
+
+One run on the machine this was extracted on, from before 2026-08-30. The script ran 300 wake
+iterations then and discarded no warm-up; both defaults moved that day, to 2000 and 200, so a run
+today reports over a different sample:
 
 ```
 platform: Linux-aarch64-py3.12.13

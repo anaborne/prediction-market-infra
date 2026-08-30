@@ -4,6 +4,18 @@ Standalone, outside the pytest suite (same pattern as `scripts/live_*.py`). Run 
 `uv run python benchmarks/latency_bench.py`, which also
 appends the run's results to `benchmarks/history.csv`.
 
+`--executor cpp:/path/to/executor_hotpath` swaps the executor process for the C++
+reimplementation in `executor-hotpath-cpp` and leaves everything else alone: the same
+`IPCPollerClient`, the same socket, the same frames, the same `latency_events` table. That is the
+whole claim the substitution makes, so `poller_client.py` is neither modified nor subclassed here.
+The `executor` column in `history.csv` says which side of the socket produced a row.
+
+One asymmetry the comparison has to carry rather than hide. The Python executor dispatches every
+accepted fire through `OrderDispatcher` and the fake REST client, and the C++ binary's dispatch
+hook is empty, so it does less after the ack than the Python does. `wake_recv` closes before the
+fire in both, so the span itself is unaffected, but the process is not equally loaded and
+`wake_send` runs against an executor with less to do.
+
 Measures the two hot-path contributors this codebase can currently exercise without a live
 network call:
 
@@ -27,6 +39,7 @@ contributors it *can* measure into a labeled partial estimate and leaves the res
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import contextlib
 import csv
@@ -54,7 +67,23 @@ from kalshi_bot.ipc.protocol import SCHEMA_VERSION, WakeMessage
 from kalshi_bot.telemetry.db import TelemetryDB
 
 _SIGN_ITERATIONS = 2000
-_WAKE_ITERATIONS = 300
+_WAKE_ITERATIONS = 2000
+
+# Discarded from the front of every sample, on both sides of every comparison. Nothing was
+# discarded before 2026-08-30; the first iteration landed in the percentile set with a cold RSA
+# context, a cold socket and a cold page cache, and at n=2000 the top twenty samples are what p99
+# is. The C++ harness defaults to the same count, and a run of one with warm-up against a run of
+# the other without it would be rigged in the direction the port wants.
+_WARMUP_ITERATIONS = 200
+
+# `IPCPollerClient` holds a bounded queue and `send_wake` drops onto a full one, by design: a wake
+# channel that blocked its caller would block the fire path. A synchronous loop of 2200 sends fills
+# the default 1000-deep queue and loses more than half of them, so the loop yields after each send
+# and the writer keeps the depth at one or two.
+#
+# This also decides what `wake_send` measures. The span starts at `sent_at_ns`, before the enqueue,
+# so under a burst it is mostly the wait behind everything already queued. Yielding makes it the
+# write and the drain, which is the thing the executor is on the other end of.
 
 _HISTORY_CSV = Path(__file__).parent / "history.csv"
 
@@ -71,18 +100,29 @@ def _platform_tag() -> str:
     return f"{platform.system()}-{platform.machine()}-py{platform.python_version()}"
 
 
+# `executor` and `warmup` were added 2026-08-30 and the three rows that predate them are
+# backfilled with `python` and `0`, both of which are what those runs did. The `p90` columns
+# arrived at the same time and are empty in those rows, because the samples they would have been
+# computed from are gone and a p90 interpolated from a p50 and a p99 would be a fabrication.
 _HISTORY_FIELDS = [
     "timestamp_utc",
     "platform",
+    "executor",
+    "warmup",
     "sign_p50_ms",
+    "sign_p90_ms",
     "sign_p99_ms",
     "wake_send_asyncio_p50_ms",
+    "wake_send_asyncio_p90_ms",
     "wake_send_asyncio_p99_ms",
     "wake_recv_asyncio_p50_ms",
+    "wake_recv_asyncio_p90_ms",
     "wake_recv_asyncio_p99_ms",
     "wake_send_uvloop_p50_ms",
+    "wake_send_uvloop_p90_ms",
     "wake_send_uvloop_p99_ms",
     "wake_recv_uvloop_p50_ms",
+    "wake_recv_uvloop_p90_ms",
     "wake_recv_uvloop_p99_ms",
     "partial_detect_to_fire_p99_ms_estimate",
 ]
@@ -103,29 +143,61 @@ def _percentile(values: list[float], p: float) -> float:
 @dataclass(frozen=True)
 class Stats:
     p50_ms: float
+    p90_ms: float
     p99_ms: float
     mean_ms: float
     n: int
+    warmup: int
 
     @classmethod
-    def from_samples(cls, samples: list[float]) -> Stats:
+    def from_samples(cls, samples: list[float], warmup: int) -> Stats:
+        """Drop the leading `warmup` samples, then summarize the rest.
+
+        `samples` has to arrive in the order it was measured, which is why the queries in
+        `_read_stage_durations` order by `id` rather than taking whatever a table scan hands back.
+        """
+        kept = samples[warmup:]
+        if not kept:
+            raise ValueError(f"a warm-up of {warmup} consumed all {len(samples)} samples")
         return cls(
-            p50_ms=_percentile(samples, 0.50),
-            p99_ms=_percentile(samples, 0.99),
-            mean_ms=statistics.mean(samples),
-            n=len(samples),
+            p50_ms=_percentile(kept, 0.50),
+            p90_ms=_percentile(kept, 0.90),
+            p99_ms=_percentile(kept, 0.99),
+            mean_ms=statistics.mean(kept),
+            n=len(kept),
+            warmup=warmup,
         )
 
 
 def _report_line(label: str, stats: Stats, target_ms: float) -> str:
     verdict = "OK" if stats.p99_ms < target_ms else "OVER BUDGET"
     return (
-        f"{label:<32} p50={stats.p50_ms:7.3f}ms  p99={stats.p99_ms:7.3f}ms  "
-        f"mean={stats.mean_ms:7.3f}ms  n={stats.n:<5}  target=<{target_ms}ms  [{verdict}]"
+        f"{label:<32} p50={stats.p50_ms:7.3f}ms  p90={stats.p90_ms:7.3f}ms  "
+        f"p99={stats.p99_ms:7.3f}ms  n={stats.n:<5} warmup={stats.warmup:<5} "
+        f"target=<{target_ms}ms  [{verdict}]"
     )
 
 
-def bench_sign(iterations: int = _SIGN_ITERATIONS) -> Stats:
+@dataclass(frozen=True)
+class ExecutorSpec:
+    """Which process serves the socket. `python` is in-process; `cpp:PATH` is spawned."""
+
+    label: str
+    binary: Path | None
+
+    @classmethod
+    def parse(cls, value: str) -> ExecutorSpec:
+        if value == "python":
+            return cls(label="python", binary=None)
+        if value.startswith("cpp:"):
+            binary = Path(value[len("cpp:") :]).expanduser()
+            if not binary.is_file():
+                raise argparse.ArgumentTypeError(f"no executor binary at {binary}")
+            return cls(label="cpp", binary=binary)
+        raise argparse.ArgumentTypeError(f"expected 'python' or 'cpp:PATH', got {value!r}")
+
+
+def bench_sign(iterations: int = _SIGN_ITERATIONS, warmup: int = _WARMUP_ITERATIONS) -> Stats:
     """Benchmark `KalshiRequestSigner.sign()` against a throwaway RSA-2048 keypair."""
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     with tempfile.TemporaryDirectory() as tmp:
@@ -140,13 +212,13 @@ def bench_sign(iterations: int = _SIGN_ITERATIONS) -> Stats:
         signer = KalshiRequestSigner(key_path)
 
         durations_ms: list[float] = []
-        for _ in range(iterations):
+        for _ in range(warmup + iterations):
             timestamp = str(int(time.time() * 1000))
             start_ns = time.perf_counter_ns()
             signer.sign(timestamp, "GET", "/trade-api/v2/portfolio/orders")
             durations_ms.append((time.perf_counter_ns() - start_ns) / 1_000_000)
 
-    return Stats.from_samples(durations_ms)
+    return Stats.from_samples(durations_ms, warmup)
 
 
 class _FakeRestClient:
@@ -171,9 +243,58 @@ async def _wait_until(predicate: Callable[[], bool], timeout_s: float) -> None:
         await asyncio.sleep(0.005)
 
 
-async def _run_wake_roundtrip(
-    iterations: int, telemetry_db_path: Path, socket_path: Path
-) -> tuple[list[float], list[float]]:
+def _bench_wake(index: int) -> WakeMessage:
+    """The wake both configurations send. Identical bytes on the wire either way."""
+    return WakeMessage(
+        schema_version=SCHEMA_VERSION,
+        correlation_id=f"bench-{index}",
+        market_ticker="KXBENCH-T100",
+        asset="BENCH",
+        direction="yes",
+        kalshi_price=0.5,
+        wire_price_yes_dollars=0.5,
+        model_probability=0.55,
+        fee=0.01,
+        edge=0.04,
+        decision_ts_ms=0,
+        sent_at_ms=int(time.time() * 1000),
+        sent_at_ns=time.perf_counter_ns(),
+    )
+
+
+def _read_stage_durations(db_path: Path, stage: str) -> list[float]:
+    """`duration_ms` for one stage, in the order the rows were written.
+
+    `ORDER BY id` rather than whatever a scan returns, because the caller drops a warm-up prefix
+    and `idx_latency_events_stage` makes the unordered result's order an implementation detail of
+    the query planner.
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        return [
+            row[0]
+            for row in conn.execute(
+                "SELECT duration_ms FROM latency_events WHERE stage = ? ORDER BY id", (stage,)
+            )
+        ]
+    finally:
+        conn.close()
+
+
+def _count_stage(db_path: Path, stage: str) -> int:
+    conn = sqlite3.connect(db_path)
+    try:
+        (count,) = conn.execute(
+            "SELECT COUNT(*) FROM latency_events WHERE stage = ?", (stage,)
+        ).fetchone()
+        return int(count)
+    finally:
+        conn.close()
+
+
+async def _run_wake_roundtrip_python(
+    total: int, telemetry_db_path: Path, socket_path: Path
+) -> None:
     poller_db = TelemetryDB(telemetry_db_path)
     poller_db.initialize()
     executor_db = TelemetryDB(telemetry_db_path)
@@ -210,25 +331,10 @@ async def _run_wake_roundtrip(
     rest_client.post = _counting_post  # type: ignore[method-assign]
 
     try:
-        for i in range(iterations):
-            client.send_wake(
-                WakeMessage(
-                    schema_version=SCHEMA_VERSION,
-                    correlation_id=f"bench-{i}",
-                    market_ticker="KXBENCH-T100",
-                    asset="BENCH",
-                    direction="yes",
-                    kalshi_price=0.5,
-                    wire_price_yes_dollars=0.5,
-                    model_probability=0.55,
-                    fee=0.01,
-                    edge=0.04,
-                    decision_ts_ms=0,
-                    sent_at_ms=int(time.time() * 1000),
-                    sent_at_ns=time.perf_counter_ns(),
-                )
-            )
-        await _wait_until(lambda: posted >= iterations, timeout_s=30.0)
+        for i in range(total):
+            client.send_wake(_bench_wake(i))
+            await asyncio.sleep(0)
+        await _wait_until(lambda: posted >= total, timeout_s=120.0)
     finally:
         await client.close()
         await server.close()
@@ -238,53 +344,133 @@ async def _run_wake_roundtrip(
         poller_db.close()
         executor_db.close()
 
-    conn = sqlite3.connect(telemetry_db_path)
+
+async def _run_wake_roundtrip_cpp(
+    binary: Path, total: int, telemetry_db_path: Path, socket_path: Path
+) -> None:
+    """Same poller, same socket, same frames, a different process on the far end.
+
+    The Python opens the telemetry file first so its own migrations decide the schema; the C++
+    sink applies `CREATE TABLE IF NOT EXISTS` over whatever it finds and stamps `user_version`
+    only on a file it created, so the order here is what keeps one side from surprising the other.
+
+    Completion is the executor's own `wake_recv` row count and not the count of frames this
+    process wrote. Terminating on frames-written leaves wakes sitting in the socket buffer that
+    the executor is about to read, and drops them.
+    """
+    poller_db = TelemetryDB(telemetry_db_path)
+    poller_db.initialize()
+
+    process = await asyncio.create_subprocess_exec(
+        str(binary),
+        "--socket",
+        str(socket_path),
+        "--telemetry-db",
+        str(telemetry_db_path),
+    )
     try:
-        wake_send = [
-            row[0]
-            for row in conn.execute(
-                "SELECT duration_ms FROM latency_events WHERE stage = 'wake_send'"
+        await _wait_until(socket_path.exists, timeout_s=10.0)
+        client = IPCPollerClient(socket_path, poller_db)
+        client.start()
+        try:
+            for i in range(total):
+                client.send_wake(_bench_wake(i))
+                await asyncio.sleep(0)
+            await _wait_until(
+                lambda: _count_stage(telemetry_db_path, "wake_recv") >= total, timeout_s=120.0
             )
-        ]
-        wake_recv = [
-            row[0]
-            for row in conn.execute(
-                "SELECT duration_ms FROM latency_events WHERE stage = 'wake_recv'"
-            )
-        ]
+        finally:
+            await client.close()
     finally:
-        conn.close()
-    return wake_send, wake_recv
+        # SIGTERM, then wait: `main.cpp` closes the telemetry sink after the serve loop returns,
+        # so the drain that lands the last batch happens inside this wait.
+        process.terminate()
+        await process.wait()
+        poller_db.close()
 
 
 def bench_wake_roundtrip(
-    run: Callable[..., Any], iterations: int = _WAKE_ITERATIONS
+    run: Callable[..., Any],
+    executor: ExecutorSpec,
+    iterations: int = _WAKE_ITERATIONS,
+    warmup: int = _WARMUP_ITERATIONS,
 ) -> tuple[Stats, Stats]:
     """Run the wake round trip under whichever loop runner `run` provides.
 
     `run` is `asyncio.run` or `uvloop.run`. Uses a `/tmp`-rooted socket dir, same as
     `tests/ipc/`, because `AF_UNIX` paths have a short OS-level length limit that a
     `pytest`-generated `tmp_path` can exceed.
+
+    `run` still governs the poller's loop when the executor is the C++ binary. That is the point
+    of keeping both rows: the loop under test is the one this process runs, and the far end is a
+    separate process either way.
     """
+    total = warmup + iterations
     with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
         socket_path = Path(tmp) / "executor.sock"
         db_path = Path(tmp) / "telemetry.sqlite"
-        wake_send, wake_recv = run(_run_wake_roundtrip(iterations, db_path, socket_path))
-    return Stats.from_samples(wake_send), Stats.from_samples(wake_recv)
+        if executor.binary is None:
+            run(_run_wake_roundtrip_python(total, db_path, socket_path))
+        else:
+            run(_run_wake_roundtrip_cpp(executor.binary, total, db_path, socket_path))
+
+        wake_send = _read_stage_durations(db_path, "wake_send")
+        wake_recv = _read_stage_durations(db_path, "wake_recv")
+
+    for stage, durations in (("wake_send", wake_send), ("wake_recv", wake_recv)):
+        if len(durations) != total:
+            raise RuntimeError(
+                f"{stage}: {len(durations)} rows for {total} wakes; the run lost frames and the "
+                f"percentiles would be computed over a sample nobody chose"
+            )
+    return Stats.from_samples(wake_send, warmup), Stats.from_samples(wake_recv, warmup)
 
 
-def main() -> int:
-    print(f"Signature computation: {_SIGN_ITERATIONS} iterations, RSA-2048 PSS...")
-    sign_stats = bench_sign()
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Phase 9 latency benchmark suite.")
+    parser.add_argument(
+        "--executor",
+        type=ExecutorSpec.parse,
+        default=ExecutorSpec(label="python", binary=None),
+        help="python (default), or cpp:/path/to/executor_hotpath",
+    )
+    parser.add_argument("--sign-iterations", type=int, default=_SIGN_ITERATIONS)
+    parser.add_argument("--wake-iterations", type=int, default=_WAKE_ITERATIONS)
+    parser.add_argument(
+        "--warmup",
+        type=int,
+        default=_WARMUP_ITERATIONS,
+        help="iterations discarded from the front of every sample",
+    )
+    parser.add_argument(
+        "--no-history",
+        action="store_true",
+        help="print the results without appending a row to history.csv",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+    executor = args.executor
+    warmup = args.warmup
+
+    print(f"Executor: {executor.label}" + (f" ({executor.binary})" if executor.binary else ""))
+    print(f"Signature computation: {args.sign_iterations} iterations, RSA-2048 PSS...")
+    sign_stats = bench_sign(args.sign_iterations, warmup)
     print(_report_line("sign()", sign_stats, target_ms=3.0))
 
-    print(f"\nPoller->executor wake round trip: {_WAKE_ITERATIONS} messages, stock asyncio...")
-    wake_send_asyncio, wake_recv_asyncio = bench_wake_roundtrip(asyncio.run)
+    print(f"\nPoller->executor wake round trip: {args.wake_iterations} messages, stock asyncio...")
+    wake_send_asyncio, wake_recv_asyncio = bench_wake_roundtrip(
+        asyncio.run, executor, args.wake_iterations, warmup
+    )
     print(_report_line("wake_send (asyncio)", wake_send_asyncio, target_ms=1.0))
     print(_report_line("wake_recv (asyncio)", wake_recv_asyncio, target_ms=1.0))
 
-    print(f"\nPoller->executor wake round trip: {_WAKE_ITERATIONS} messages, uvloop...")
-    wake_send_uvloop, wake_recv_uvloop = bench_wake_roundtrip(uvloop.run)
+    print(f"\nPoller->executor wake round trip: {args.wake_iterations} messages, uvloop...")
+    wake_send_uvloop, wake_recv_uvloop = bench_wake_roundtrip(
+        uvloop.run, executor, args.wake_iterations, warmup
+    )
     print(_report_line("wake_send (uvloop)", wake_send_uvloop, target_ms=1.0))
     print(_report_line("wake_recv (uvloop)", wake_recv_uvloop, target_ms=1.0))
 
@@ -310,6 +496,16 @@ def main() -> int:
         f"{partial_estimate_ms:.3f}ms (informal only; target is <15ms end-to-end, not directly "
         f"comparable; see docs/GUIDE.md §7.2)"
     )
+    if executor.label != "python":
+        # The signer is not on either executor's fire path; it lives in `rest_client.py`, past
+        # `dispatch()`. This row's sign number is this interpreter's, on both kinds of row.
+        print(
+            "\nsign() above is the Python signer in every row. Signing is not in the executor "
+            "process on either side, so swapping the executor does not move it."
+        )
+
+    if args.no_history:
+        return 0
 
     _HISTORY_CSV.parent.mkdir(parents=True, exist_ok=True)
     is_new = not _HISTORY_CSV.exists()
@@ -321,15 +517,22 @@ def main() -> int:
             [
                 time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 _platform_tag(),
+                executor.label,
+                warmup,
                 f"{sign_stats.p50_ms:.4f}",
+                f"{sign_stats.p90_ms:.4f}",
                 f"{sign_stats.p99_ms:.4f}",
                 f"{wake_send_asyncio.p50_ms:.4f}",
+                f"{wake_send_asyncio.p90_ms:.4f}",
                 f"{wake_send_asyncio.p99_ms:.4f}",
                 f"{wake_recv_asyncio.p50_ms:.4f}",
+                f"{wake_recv_asyncio.p90_ms:.4f}",
                 f"{wake_recv_asyncio.p99_ms:.4f}",
                 f"{wake_send_uvloop.p50_ms:.4f}",
+                f"{wake_send_uvloop.p90_ms:.4f}",
                 f"{wake_send_uvloop.p99_ms:.4f}",
                 f"{wake_recv_uvloop.p50_ms:.4f}",
+                f"{wake_recv_uvloop.p90_ms:.4f}",
                 f"{wake_recv_uvloop.p99_ms:.4f}",
                 f"{partial_estimate_ms:.4f}",
             ]
@@ -339,4 +542,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
