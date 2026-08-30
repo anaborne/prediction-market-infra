@@ -74,6 +74,14 @@ socket instead. The poller, the frames and the `latency_events` table are the sa
 `poller_client.py` is not modified or subclassed to make it work, which is the whole claim the
 substitution makes. The `executor` column in `history.csv` says which one produced a row.
 
+Both configurations were run on one machine on 2026-08-30 and are the last two rows here.
+Executor-side `wake_recv` fell by a factor of 2.4 to 5.0 depending on the event loop and the
+percentile. The C++ repository's
+[`RESULTS.md`](https://github.com/anaborne/executor-hotpath-cpp/blob/main/RESULTS.md) carries the
+tables, the pre-registered expectation the run contradicted, and the confound that makes every
+one of those ratios an upper bound: the Python baseline runs the poller and the executor on one
+event loop, and the cpp configuration spawns a second process.
+
 One run on the machine this was extracted on, from before 2026-08-30. The script ran 300 wake
 iterations then and discarded no warm-up; both defaults moved that day, to 2000 and 200, so a run
 today reports over a different sample:
