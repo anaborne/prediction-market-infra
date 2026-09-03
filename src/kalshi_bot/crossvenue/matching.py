@@ -343,7 +343,9 @@ class MarketMatcher:
             Up to `config.max_candidates_per_market` candidates, ordered by how much rare wording
             they share with `entry`.
         """
-        seeds = sorted(set(entry.tokens), key=lambda token: -weights.get(token, 1.0))[:_SEED_TOKENS]
+        seeds = sorted(set(entry.tokens), key=lambda token: (-weights.get(token, 1.0), token))[
+            :_SEED_TOKENS
+        ]
         hits: dict[str, tuple[_Indexed, float]] = {}
         for token in seeds:
             weight = weights.get(token, 1.0)
@@ -352,7 +354,7 @@ class MarketMatcher:
                 existing = hits.get(key)
                 accumulated = (existing[1] if existing else 0.0) + weight
                 hits[key] = (candidate, accumulated)
-        ranked = sorted(hits.values(), key=lambda item: -item[1])
+        ranked = sorted(hits.values(), key=lambda item: (-item[1], item[0].market.market_id))
         return [candidate for candidate, _ in ranked[: self.config.max_candidates_per_market]]
 
     def _evaluate(

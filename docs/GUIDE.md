@@ -56,7 +56,8 @@ discipline that produced it, which is the part that transfers:
 What the vendored code depends on and states for itself: Kalshi's taker fee is quadratic in price,
 `0.07 × multiplier × C × P × (1 − P)`, rounded up to the cent on the whole fill, which is 1.75¢ per
 contract at mid. Polymarket US charges the same shape with a `feeCoefficient` observed at `0.06`.
-Both are taker-only. `crossvenue/fees.py` carries the derivations.
+Polymarket US is taker-only; Kalshi is taker-only except on the 133 series whose `fee_type`
+carries a maker multiplier. `crossvenue/fees.py` carries the derivations.
 
 ---
 
@@ -298,10 +299,12 @@ Measured in the parent system over its whole life (2026-08-19 to 2026-08-29), on
 detect→fire p50 10.23ms / p90 29.66ms / p99 46.61ms / max 898.82ms on n=734 real order fires,
 against a <15ms budget, so the budget was met at the median and missed by roughly 3× at p99.
 Signing dominated: p50 3.68ms / p99 9.02ms on real fires against its own 3ms budget, while the
-isolated warm-loop microbenchmark reads 1.65ms, an in-situ cost about 2.2× the benchmark. Shadow
-fires (n=92,441; identical path, real signature, stopped before the socket write) ran p50 6.72ms /
-p99 13.49ms, faster than real fires at both points; the gap was never explained. Round trip to the venue (`dispatch_ack`) ran p50 123ms / p99 487ms, an order of
-magnitude above everything local. The per-stage table is committed as
+isolated warm-loop microbenchmark on that host read 1.65ms (that host's run is not in
+`../benchmarks/history.csv`, whose committed runs on other machines read p50 0.33ms to 0.92ms), an
+in-situ cost about 2.2× the benchmark. Shadow fires (n=92,441; identical path, real signature,
+stopped before the socket write) ran p50 6.72ms / p99 13.49ms, faster than real fires at both
+points; the gap was never explained. Round trip to the venue (`dispatch_ack`) ran p50 123ms / p99
+487ms, an order of magnitude above everything local. The per-stage table is committed as
 [`../benchmarks/parent_latency_summary.csv`](../benchmarks/parent_latency_summary.csv).
 
 A correction, kept on the record. From 2026-08-21 to 2026-08-29 this section quoted p50 4.33ms /

@@ -9,9 +9,9 @@ a uniform policy:
   would silently reset those limits.
 - `latency_events` (30 days) backs the detect→fire distribution, which needs enough history to
   compare one run against another.
-- `decision_results` (14 days) is strategy-tuning data; older rows describe a model that has since
+- `decision_results` (30 days) is strategy-tuning data; older rows describe a model that has since
   changed.
-- `market_snapshots` and `index_observations` (7 days) are the highest-volume tables by a wide
+- `market_snapshots` and `index_observations` (14 days) are the highest-volume tables by a wide
   margin and the least useful in hindsight.
 
 `correlations` is a parent table with foreign keys pointing at it, so it is swept last and only

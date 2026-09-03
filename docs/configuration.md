@@ -134,8 +134,8 @@ nothing reads them from the environment. Changing one means editing the default 
 `shadow_fire_every` is the one most likely to need tuning during a long run. It sets the sample
 rate for the detect→fire latency measurement, and it is the only configurable source of the
 telemetry write volume added by that measurement. Lowering it costs one RSA signature per shadow
-fire (~3 ms of CPU, measured), and that signature is synchronous, so it does not yield to a real
-fire arriving behind it. See [GUIDE.md](GUIDE.md).
+fire, and that signature is synchronous, so it does not yield to a real fire arriving behind it.
+See [GUIDE.md](GUIDE.md) §7.2 for the measured signing cost.
 
 ## Risk gate
 

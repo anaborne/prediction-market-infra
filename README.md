@@ -75,7 +75,7 @@ socket instead. The poller, the frames and the `latency_events` table are the sa
 substitution makes. The `executor` column in `history.csv` says which one produced a row.
 
 Both configurations were run on one machine on 2026-08-30 and are the last two rows here.
-Executor-side `wake_recv` fell by a factor of 2.4 to 5.0 depending on the event loop and the
+Executor-side `wake_recv` fell by a factor of 2.4 to 5.2 depending on the event loop and the
 percentile. The C++ repository's
 [`RESULTS.md`](https://github.com/anaborne/executor-hotpath-cpp/blob/main/RESULTS.md) carries the
 tables, the pre-registered expectation the run contradicted, and the confound that makes every
@@ -121,9 +121,9 @@ Three caveats on the reported figure.
 - It is one span. The gaps between stages are most of the elapsed time on a healthy run, and summing
   sub-measurements would make them disappear.
 
-CI runs both benchmarks on every push and asserts only that they complete. A hosted runner is a
-noisy shared machine, and any latency threshold enforced there would be either so loose it asserts
-nothing or so tight it fails on a busy neighbour.
+CI runs both benchmarks on every push to `main` and on every pull request, and asserts only that
+they complete. A hosted runner is a noisy shared machine, and any latency threshold enforced there
+would be either so loose it asserts nothing or so tight it fails on a busy neighbour.
 
 ---
 
@@ -161,21 +161,31 @@ that finds none of them is broken, and without the plant that is indistinguishab
 that is merely strict.
 
 ```
+corpus:   synthetic, seed=20260825
+
+  Kalshi-side markets              20,000
+  counterparty markets              6,000
   full cross (pairs)          120,000,000
   tokens indexed                      531
   tokens dropped (too common)          25
   candidates scored               159,635
   reduction factor                    752x
-  wall time (median of 3)           4.32s
 
   cleared the score gate              924
-    identical           250
-    weak                254
-    rejected            420
 
-  planted pairs recovered     250 / 250
-  identical, not planted        0  (expected 0)
+  Verdicts on the candidates that cleared it:
+    identical           250
+    strong                0
+    weak                258
+    rejected            416
+
+  planted pairs                       250
+  planted pairs recovered             250
+  identical, not planted                0  (expected 0)
 ```
+
+Every count above is the same on any machine and in any process. The run also prints a
+platform line and a wall time, which are the host's and are left out of this block.
 
 Filler markets are drawn from disjoint per-venue vocabularies, so the generator cannot emit an
 identical pair nobody planted. That is what turns the last line into an assertion. Any unplanted
@@ -184,7 +194,7 @@ identical pair nobody planted. That is what turns the last line into an assertio
 These numbers are properties of the generator, and of no exchange. The production scan they mirror
 in shape (95,206 × 10,656 markets, about 1.01 billion pairs, narrowed to 63,424 scored candidates
 in 113 seconds) read two live venues whose listings are not in this repository and cannot be
-reproduced from it. [§4.2](docs/GUIDE.md#42-cross-venue-arbitrage-kalshi--polymarket-us--does-not-exist)
+reproduced from it. [§4.2](docs/GUIDE.md#42-cross-venue-arbitrage-kalshi--polymarket-us-does-not-exist)
 records it.
 
 ### The case the gate initially missed
@@ -287,8 +297,8 @@ offline.
 
 ## Gates
 
-CI runs exactly these on every push, plus a smoke run of both benchmarks and of the Prefect flow
-that wraps them:
+CI runs exactly these on every push to `main` and on every pull request, plus a smoke run of both
+benchmarks and of the Prefect flow that wraps them:
 
 ```bash
 uv run ruff check . && uv run ruff format --check .

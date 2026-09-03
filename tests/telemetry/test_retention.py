@@ -160,7 +160,7 @@ def test_deletes_across_multiple_chunks(
 def test_boundary_row_exactly_at_the_cutoff_is_kept(conn: sqlite3.Connection) -> None:
     # Retention is "older than", not "at least as old as". An off-by-one here quietly deletes a
     # day more than documented.
-    _observation(conn, "exactly-7d", 7)
+    _observation(conn, "exactly-14d", 14)
     conn.commit()
 
     retention.prune(conn, _NOW_MS, checkpoint=False)

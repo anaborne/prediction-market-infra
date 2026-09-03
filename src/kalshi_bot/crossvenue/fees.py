@@ -8,7 +8,8 @@ refuses to run against a fee type it does not implement. This module keeps that 
 extends it to Polymarket.
 
 All three venues charge the same *shape* of fee, which is a genuine convenience: a quadratic in
-the traded price, symmetric about 50c, charged to takers only. They differ only in where the
+the traded price, symmetric about 50c, charged to takers, with Kalshi additionally charging a
+maker fee on the 133 series whose `fee_type` says so (below). They differ only in where the
 coefficient is written on the wire and in how the total is rounded.
 
 - Kalshi: `ceil(0.07 x multiplier x C x P x (1 - P) x 100) / 100`, rounded up to the next

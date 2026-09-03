@@ -31,8 +31,9 @@ def monotonic_ns() -> int:
     when NTP corrects it, which silently yields negative latencies.
 
     Note for long unattended runs on macOS: this counter does not advance while the machine is
-    asleep, so a measured duration spanning a sleep is an undercount, not an overcount. The soak
-    procedure holds the machine awake for exactly this reason. See `docs/operations.md`.
+    asleep, so a measured duration spanning a sleep is an undercount, not an overcount. The
+    parent system's soak procedure held the machine awake for exactly this reason; those
+    operations notes are not part of this extraction.
     """
     return time.perf_counter_ns()
 

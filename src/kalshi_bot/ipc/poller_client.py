@@ -48,9 +48,10 @@ class IPCPollerClient:
     """Non-blocking client for sending `WakeMessage`s to the executor process.
 
     A background task (started by `start()`) owns the connection lifecycle: connect, drain the
-    outbound queue, read back acks for logging, and reconnect with exponential backoff + full
+    outbound queue, read back acks for logging, and reconnect with exponential backoff and ±50%
     jitter on any failure, retrying forever, since a wake channel that gives up permanently
-    would silently stop firing for the rest of the process's life. This is a new, independent
+    would silently stop firing for the rest of the process's life. `_MAX_BACKOFF_S` is the base
+    the jitter multiplies, so a single wait reaches 45s. This is a new, independent
     implementation rather than a reuse of `ingest/reconnect.py::reconnecting_stream()`, which is
     shaped for inbound async-generator streams, not an outbound persistent writer.
 
