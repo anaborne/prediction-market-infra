@@ -2,7 +2,7 @@
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
 ![mypy strict](https://img.shields.io/badge/mypy-strict-blue)
-![tests](https://img.shields.io/badge/tests-391%20offline-blue)
+![tests](https://img.shields.io/badge/tests-395%20offline-blue)
 
 Trading infrastructure for [Kalshi](https://kalshi.com) and [Polymarket US](https://polymarket.us)
 prediction markets: a two-process hot path over a Unix domain socket, and the cross-venue matcher
@@ -13,7 +13,7 @@ credentials and no network, and print what they measured.
 
 ```bash
 uv sync
-uv run pytest                              # 391 tests, none of which may touch a live API
+uv run pytest                              # 395 tests, none of which may touch a live API
 uv run python benchmarks/latency_bench.py  # signing + poller→executor round trip, asyncio vs uvloop
 cd benchmarks && uv run python matcher_bench.py   # the narrowing, on a generated corpus
 ```
@@ -184,8 +184,11 @@ corpus:   synthetic, seed=20260825
   identical, not planted                0  (expected 0)
 ```
 
-Every count above is the same on any machine and in any process. The run also prints a
-platform line and a wall time, which are the host's and are left out of this block.
+Every count above is the same on any machine and in any process. The run also prints a platform
+line, two wall times and a closing caveat. Those are the host's or are restated below, and are left
+out of this block. `tests/crossvenue/test_bench_corpus.py` runs the same generator and matcher at a
+size the test suite can afford and pins the verdict counts there, so the invariance claim has a
+mechanism under it; the counts at the size above are not themselves pinned.
 
 Filler markets are drawn from disjoint per-venue vocabularies, so the generator cannot emit an
 identical pair nobody planted. That is what turns the last line into an assertion. Any unplanted
@@ -303,7 +306,7 @@ benchmarks and of the Prefect flow that wraps them:
 ```bash
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                              # strict
-uv run pytest -q                         # 391 tests, no network
+uv run pytest -q                         # 395 tests, no network
 ```
 
 ## Documentation

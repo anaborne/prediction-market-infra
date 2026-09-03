@@ -51,7 +51,7 @@ class IPCPollerClient:
     outbound queue, read back acks for logging, and reconnect with exponential backoff and ±50%
     jitter on any failure, retrying forever, since a wake channel that gives up permanently
     would silently stop firing for the rest of the process's life. `_MAX_BACKOFF_S` is the base
-    the jitter multiplies, so a single wait reaches 45s. This is a new, independent
+    the jitter multiplies, so a single wait lands in [15s, 45s). This is a new, independent
     implementation rather than a reuse of `ingest/reconnect.py::reconnecting_stream()`, which is
     shaped for inbound async-generator streams, not an outbound persistent writer.
 
