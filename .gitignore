@@ -32,3 +32,6 @@ htmlcov/
 .idea/
 *.swp
 .DS_Store
+
+# added 2026-09-08 during disk cleanup
+node_modules/
