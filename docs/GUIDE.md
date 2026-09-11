@@ -63,13 +63,18 @@ carries a maker multiplier. `crossvenue/fees.py` has the census, the count, and 
 
 ## 4. What was searched, and what killed each idea
 
-The parent project runs each search as a pre-registered experiment: criterion, sample size,
+The parent project ran each search as a pre-registered experiment: criterion, sample size,
 stopping rule and analysis order fixed in writing before any data, one declared extension, no
-interim looks (§5). Every search it has closed has returned negative.
+interim looks (§5). Every search it closed returned negative.
 
-The searches below are the closed ones this repository describes. Others are omitted because the
-work continues. An open thesis is not improved by being published, and a summary of one would be
-the only part of this document that could not be checked against the code here.
+The five searches below are the ones this repository can support. Each is stated next to the code
+that ran it, so a reader can hold the claim against the mechanism rather than take it on trust.
+
+More were run. The parent project closed its programme on 2026-08-29 and the rest of the record is
+private, along with the raw data behind several of them, which was deleted under the replay budget
+in §5 rather than kept for a re-cut the method forbids. That count is not printed here, because a
+number this repository cannot evidence does not belong in it. An earlier version of this paragraph
+said the others were omitted because the work continues; that stopped being true at shutdown.
 
 ### 4.1 The directional crypto strategy, falsified
 

@@ -251,6 +251,11 @@ The recurring result has one shape. The taker fee is larger than the dislocation
 kills every fee-paying strategy built from public data before it is coded. One finding, arrived at
 five separate ways.
 
+Five is what this repository can evidence, not the size of the programme. The parent closed more
+searches than are described here and that record is private, so any larger count you see quoted
+elsewhere is sourced to the parent and not to this clone. §4 of the GUIDE says the same thing where
+the searches actually live.
+
 [`docs/GUIDE.md`](docs/GUIDE.md) §4 has each with its sample size, §5 has the method, and §6 has
 sixteen failure modes, each named as a general form and then as the instance that produced it. A
 sample:
